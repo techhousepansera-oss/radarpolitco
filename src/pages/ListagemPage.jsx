@@ -107,18 +107,36 @@ export default function ListagemPage({ session }) {
     }
   }, [showMobileSearch])
 
-  // Keyboard shortcut "/" — focuses desktop search
+  // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== '/') return
       const tag = document.activeElement?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      e.preventDefault()
-      desktopSearchRef.current?.focus()
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+      // "/" — focus search
+      if (e.key === '/' && !isTyping) {
+        e.preventDefault()
+        desktopSearchRef.current?.focus()
+        return
+      }
+      // "a" — open analytics
+      if ((e.key === 'a' || e.key === 'A') && !isTyping && !e.ctrlKey && !e.metaKey) {
+        navigate('/analytics')
+        return
+      }
+      // "m" — open map
+      if ((e.key === 'm' || e.key === 'M') && !isTyping && !e.ctrlKey && !e.metaKey) {
+        navigate('/mapa')
+        return
+      }
+      // "c" — open comparador
+      if ((e.key === 'c' || e.key === 'C') && !isTyping && !e.ctrlKey && !e.metaKey) {
+        navigate('/comparar')
+        return
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [navigate])
 
   // Clean up processing banner timer
   useEffect(() => {
@@ -239,19 +257,56 @@ export default function ListagemPage({ session }) {
       const s = l.status_fidelidade?.toLowerCase() || ''
       return s.includes('risco') || s.includes('baixa') || s.includes('critico')
     }).length
+    const totalFollowUps = Object.values(followUpCounts).reduce((a, b) => a + b, 0)
     return {
       total: liderancas.length,
       metaCaxias: liderancas.reduce((acc, l) => acc + (Number(l.meta_votos_caxias) || 0), 0),
       emRisco,
       fieis,
       filterCounts: { todos: liderancas.length, fiel: fieis, observando, risco: emRisco },
+      totalFollowUps,
     }
-  }, [liderancas])
+  }, [liderancas, followUpCounts])
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#00101f] flex items-center justify-center">
-        <LoadingSpinner text="Carregando Radar Político..." />
+      <div className="min-h-screen bg-[#00101f]">
+        {/* Skeleton header */}
+        <div className="bg-[#001733] border-b border-[#002b5c] h-[73px]" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          {/* Skeleton stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-xl border border-[#002b5c]/50 p-4 animate-pulse">
+                <div className="h-3 w-16 bg-[#002b5c] rounded mb-2" />
+                <div className="h-7 w-12 bg-[#002b5c] rounded" />
+              </div>
+            ))}
+          </div>
+          {/* Skeleton cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="bg-[#001733] border border-[#002b5c]/50 rounded-2xl p-5 animate-pulse">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-[#002b5c] shrink-0" />
+                  <div className="flex-1">
+                    <div className="h-4 w-32 bg-[#002b5c] rounded mb-1.5" />
+                    <div className="h-3 w-20 bg-[#002b5c]/60 rounded" />
+                  </div>
+                </div>
+                <div className="h-6 w-24 bg-[#002b5c]/60 rounded-full mb-4" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="h-14 bg-[#002b5c]/40 rounded-xl" />
+                  <div className="h-14 bg-[#002b5c]/40 rounded-xl" />
+                </div>
+                <div className="mt-4 pt-3 border-t border-[#002b5c]/50 flex justify-between">
+                  <div className="h-3 w-16 bg-[#002b5c]/50 rounded" />
+                  <div className="h-3 w-20 bg-[#002b5c]/50 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     )
   }
@@ -319,10 +374,22 @@ export default function ListagemPage({ session }) {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+            {/* Follow-up global badge */}
+            {stats.totalFollowUps > 0 && (
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg
+                bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs font-semibold">
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {stats.totalFollowUps} pendente{stats.totalFollowUps !== 1 ? 's' : ''}
+              </div>
+            )}
+
             {/* Analytics link */}
             <button
               onClick={() => navigate('/analytics')}
-              title="Analytics"
+              title="Analytics (A)"
               className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#002b5c]
                 hover:bg-[#002b5c]/60 text-slate-400 hover:text-white transition-colors text-xs font-medium"
             >
@@ -331,6 +398,34 @@ export default function ListagemPage({ session }) {
                   d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
               Analytics
+            </button>
+
+            {/* Map link */}
+            <button
+              onClick={() => navigate('/mapa')}
+              title="Mapa Eleitoral (M)"
+              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#002b5c]
+                hover:bg-[#002b5c]/60 text-slate-400 hover:text-white transition-colors text-xs font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              Mapa
+            </button>
+
+            {/* Comparador link */}
+            <button
+              onClick={() => navigate('/comparar')}
+              title="Comparar lideranças (C)"
+              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#002b5c]
+                hover:bg-[#002b5c]/60 text-slate-400 hover:text-white transition-colors text-xs font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              Comparar
             </button>
 
             {/* Realtime indicator */}
@@ -548,10 +643,11 @@ export default function ListagemPage({ session }) {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {visible.map((lider) => (
+              {visible.map((lider, idx) => (
                 <LiderancaCard
                   key={lider.id}
                   lider={lider}
+                  index={idx}
                   onClick={() => navigate(`/lideranca/${lider.id}`)}
                   onDelete={(e) => {
                     e.stopPropagation()
@@ -682,7 +778,7 @@ function StatCard({ icon, label, value, color }) {
   )
 }
 
-function LiderancaCard({ lider, onClick, onDelete, followUpCount = 0 }) {
+function LiderancaCard({ lider, onClick, onDelete, followUpCount = 0, index = 0 }) {
   const initial = (lider.apelido_politico || lider.nome_completo || '?').charAt(0).toUpperCase()
   const isNew = (() => {
     const created = lider.criado_em || lider.created_at
@@ -695,7 +791,9 @@ function LiderancaCard({ lider, onClick, onDelete, followUpCount = 0 }) {
       onClick={onClick}
       className="group cursor-pointer bg-[#001733] border border-[#002b5c]
         hover:border-[#e11d48]/40 rounded-2xl p-5 transition-all duration-200
-        hover:bg-[#001f45] hover:shadow-xl hover:shadow-[#e11d48]/5 relative"
+        hover:bg-[#001f45] hover:shadow-xl hover:shadow-[#e11d48]/5 relative
+        opacity-0 animate-fadeIn"
+      style={{ animationDelay: `${Math.min(index * 40, 400)}ms`, animationFillMode: 'forwards' }}
     >
       {/* Badge "Novo" — últimas 24h */}
       {isNew && (

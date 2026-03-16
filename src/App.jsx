@@ -1,11 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabaseClient'
 import ListagemPage from './pages/ListagemPage'
 import DetalhesPage from './pages/DetalhesPage'
-import AnalyticsPage from './pages/AnalyticsPage'
 import LoginPage from './pages/LoginPage'
 import LoadingSpinner from './components/LoadingSpinner'
+
+// Lazy-load heavy pages (Recharts + Leaflet)
+const AnalyticsPage  = lazy(() => import('./pages/AnalyticsPage'))
+const ComparadorPage = lazy(() => import('./pages/ComparadorPage'))
+const MapaPage       = lazy(() => import('./pages/MapaPage'))
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen bg-[#00101f] flex items-center justify-center">
+      <LoadingSpinner text="Carregando..." />
+    </div>
+  )
+}
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -26,6 +38,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route
           path="/login"
@@ -43,7 +56,16 @@ export default function App() {
           path="/analytics"
           element={session ? <AnalyticsPage session={session} /> : <Navigate to="/login" replace />}
         />
+        <Route
+          path="/mapa"
+          element={session ? <MapaPage session={session} /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/comparar"
+          element={session ? <ComparadorPage session={session} /> : <Navigate to="/login" replace />}
+        />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }
