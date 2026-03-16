@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { formatVotes, formatDate, timeAgo } from '../lib/utils'
 import FidelidadeBadge from '../components/FidelidadeBadge'
@@ -29,10 +29,22 @@ export default function ListagemPage({ session }) {
   const [processingBanner, setProcessingBanner] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null) // { id, nome }
   const [deleting, setDeleting] = useState(false)
+  const [followUpCounts, setFollowUpCounts] = useState({}) // { lider_id: count }
   const channelRef = useRef(null)
   const processingTimerRef = useRef(null)
   const mobileSearchRef = useRef(null)
   const desktopSearchRef = useRef(null)
+
+  const fetchFollowUpCounts = useCallback(async () => {
+    const { data } = await supabase
+      .from('follow_ups')
+      .select('lider_id')
+      .eq('status', 'pendente')
+    if (!data) return
+    const counts = {}
+    data.forEach(({ lider_id }) => { counts[lider_id] = (counts[lider_id] || 0) + 1 })
+    setFollowUpCounts(counts)
+  }, [])
 
   const fetchLiderancas = useCallback(async () => {
     setLoading(true)
@@ -63,6 +75,7 @@ export default function ListagemPage({ session }) {
 
   useEffect(() => {
     fetchLiderancas()
+    fetchFollowUpCounts()
 
     const channel = supabase
       .channel('liderancas-changes')
@@ -85,7 +98,7 @@ export default function ListagemPage({ session }) {
       channel.unsubscribe()
       supabase.removeChannel(channel)
     }
-  }, [fetchLiderancas])
+  }, [fetchLiderancas, fetchFollowUpCounts])
 
   // Auto-focus mobile search when opened
   useEffect(() => {
@@ -306,6 +319,20 @@ export default function ListagemPage({ session }) {
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
+            {/* Analytics link */}
+            <button
+              onClick={() => navigate('/analytics')}
+              title="Analytics"
+              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#002b5c]
+                hover:bg-[#002b5c]/60 text-slate-400 hover:text-white transition-colors text-xs font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Analytics
+            </button>
+
             {/* Realtime indicator */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#002b5c]/40 border border-[#002b5c]/60">
               <span className={`w-1.5 h-1.5 rounded-full ${
@@ -530,6 +557,7 @@ export default function ListagemPage({ session }) {
                     e.stopPropagation()
                     setConfirmDelete({ id: lider.id, nome: lider.apelido_politico || lider.nome_completo })
                   }}
+                  followUpCount={followUpCounts[lider.id] || 0}
                 />
               ))}
             </div>
@@ -654,7 +682,7 @@ function StatCard({ icon, label, value, color }) {
   )
 }
 
-function LiderancaCard({ lider, onClick, onDelete }) {
+function LiderancaCard({ lider, onClick, onDelete, followUpCount = 0 }) {
   const initial = (lider.apelido_politico || lider.nome_completo || '?').charAt(0).toUpperCase()
   const isNew = (() => {
     const created = lider.criado_em || lider.created_at
@@ -743,12 +771,20 @@ function LiderancaCard({ lider, onClick, onDelete }) {
 
       {/* Footer */}
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#002b5c]/50">
-        <span
-          className="text-xs text-slate-600"
-          title={formatDate(lider.criado_em || lider.created_at)}
-        >
-          {timeAgo(lider.criado_em || lider.created_at)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className="text-xs text-slate-600"
+            title={formatDate(lider.criado_em || lider.created_at)}
+          >
+            {timeAgo(lider.criado_em || lider.created_at)}
+          </span>
+          {followUpCount > 0 && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-amber-400
+              bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 rounded-lg">
+              📅 {followUpCount}
+            </span>
+          )}
+        </div>
         {lider.municipio && (
           <span className="text-xs text-slate-500 bg-[#002b5c]/40 px-2 py-0.5 rounded-full">
             {lider.municipio}

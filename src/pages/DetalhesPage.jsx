@@ -94,6 +94,53 @@ export default function DetalhesPage() {
   // Tabs
   const [activeTab, setActiveTab] = useState('dossie')
 
+  // Follow-ups
+  const [followUps, setFollowUps] = useState([])
+  const [followForm, setFollowForm] = useState({ titulo: '', descricao: '', data_agendada: '' })
+  const [savingFollow, setSavingFollow] = useState(false)
+
+  const fetchFollowUps = async () => {
+    const { data } = await supabase
+      .from('follow_ups')
+      .select('*')
+      .eq('lider_id', id)
+      .order('data_agendada', { ascending: true })
+    setFollowUps(data || [])
+  }
+
+  const handleAddFollowUp = async (e) => {
+    e.preventDefault()
+    if (!followForm.titulo.trim() || !followForm.data_agendada) return
+    setSavingFollow(true)
+    const { error: err } = await supabase.from('follow_ups').insert({
+      lider_id: id,
+      titulo: followForm.titulo.trim(),
+      descricao: followForm.descricao.trim() || null,
+      data_agendada: followForm.data_agendada,
+      status: 'pendente',
+    })
+    setSavingFollow(false)
+    if (err) {
+      toast('Erro ao agendar: ' + err.message, 'error')
+    } else {
+      toast('Follow-up agendado!', 'success')
+      setFollowForm({ titulo: '', descricao: '', data_agendada: '' })
+      fetchFollowUps()
+    }
+  }
+
+  const handleToggleFollowUp = async (f) => {
+    const newStatus = f.status === 'concluido' ? 'pendente' : 'concluido'
+    await supabase.from('follow_ups').update({ status: newStatus }).eq('id', f.id)
+    setFollowUps((prev) => prev.map((x) => x.id === f.id ? { ...x, status: newStatus } : x))
+  }
+
+  const handleDeleteFollowUp = async (fId) => {
+    await supabase.from('follow_ups').delete().eq('id', fId)
+    setFollowUps((prev) => prev.filter((x) => x.id !== fId))
+    toast('Follow-up removido', 'info')
+  }
+
   // Edit form
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -152,6 +199,14 @@ export default function DetalhesPage() {
           setEntrevista(e)
           setAnalise(parseAnalise(e.analise_json))
         }
+
+        // Load follow-ups (silently — table might not exist yet)
+        const { data: fu } = await supabase
+          .from('follow_ups')
+          .select('*')
+          .eq('lider_id', id)
+          .order('data_agendada', { ascending: true })
+        setFollowUps(fu || [])
       } catch (err) {
         setError(err.message)
       } finally {
@@ -380,13 +435,14 @@ export default function DetalhesPage() {
           {[
             { id: 'dossie',     label: 'Dossiê',        icon: '🧠' },
             { id: 'transcricao',label: 'Transcrição',   icon: '📝' },
+            { id: 'agenda',     label: 'Agenda',        icon: '📅', badge: followUps.filter(f => f.status === 'pendente').length },
             { id: 'cadastro',   label: 'Editar Cadastro', icon: '✏️' },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl
-                text-sm font-semibold transition-all ${
+                text-sm font-semibold transition-all relative ${
                 activeTab === tab.id
                   ? 'bg-[#e11d48] text-white shadow-lg shadow-[#e11d48]/20'
                   : 'text-slate-400 hover:text-white hover:bg-[#002b5c]/60'
@@ -394,6 +450,12 @@ export default function DetalhesPage() {
             >
               <span>{tab.icon}</span>
               <span className="hidden sm:inline">{tab.label}</span>
+              {tab.badge > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[10px]
+                  font-bold rounded-full flex items-center justify-center">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -734,7 +796,183 @@ export default function DetalhesPage() {
         )}
 
         {/* ══════════════════════════════════════════════
-            ABA 3: EDITAR CADASTRO (IA pré-preenche)
+            ABA 3: AGENDA DE FOLLOW-UPS
+        ══════════════════════════════════════════════ */}
+        {activeTab === 'agenda' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+            {/* Lista de follow-ups */}
+            <div className="lg:col-span-2 space-y-3">
+              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">
+                Próximos Contatos
+              </h2>
+
+              {followUps.length === 0 && (
+                <div className="bg-[#001733] border border-[#002b5c] rounded-2xl p-8 text-center">
+                  <div className="w-12 h-12 bg-[#002b5c] rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <svg className="w-6 h-6 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-slate-500">Nenhum follow-up agendado</p>
+                  <p className="text-xs text-slate-600 mt-1">Use o formulário ao lado para agendar</p>
+                </div>
+              )}
+
+              {followUps.map((f) => {
+                const isPast = new Date(f.data_agendada) < new Date() && f.status === 'pendente'
+                const isConcluido = f.status === 'concluido'
+                return (
+                  <div
+                    key={f.id}
+                    className={`flex items-start gap-3 p-4 rounded-2xl border transition-all ${
+                      isConcluido
+                        ? 'bg-[#001020] border-[#001a30]/60 opacity-60'
+                        : isPast
+                        ? 'bg-rose-950/20 border-rose-500/25'
+                        : 'bg-[#001733] border-[#002b5c]'
+                    }`}
+                  >
+                    {/* Checkbox */}
+                    <button
+                      onClick={() => handleToggleFollowUp(f)}
+                      className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5
+                        transition-all ${
+                        isConcluido
+                          ? 'bg-emerald-500 border-emerald-500'
+                          : 'border-[#003d82] hover:border-emerald-500'
+                      }`}
+                    >
+                      {isConcluido && (
+                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={`text-sm font-semibold ${isConcluido ? 'line-through text-slate-600' : 'text-white'}`}>
+                          {f.titulo}
+                        </p>
+                        {isPast && (
+                          <span className="text-xs bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-lg font-medium">
+                            Atrasado
+                          </span>
+                        )}
+                      </div>
+                      {f.descricao && (
+                        <p className="text-xs text-slate-500 mt-0.5">{f.descricao}</p>
+                      )}
+                      <p className={`text-xs mt-1 ${isPast ? 'text-rose-400' : 'text-slate-500'}`}>
+                        📅 {new Date(f.data_agendada).toLocaleString('pt-BR', {
+                          day: '2-digit', month: '2-digit', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleDeleteFollowUp(f.id)}
+                      className="text-slate-700 hover:text-rose-400 transition-colors shrink-0"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Formulário de novo follow-up */}
+            <div>
+              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">
+                Agendar Contato
+              </h2>
+              <form
+                onSubmit={handleAddFollowUp}
+                className="bg-[#001733] border border-[#002b5c] rounded-2xl p-5 space-y-4"
+              >
+                <div>
+                  <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Assunto *</label>
+                  <input
+                    type="text"
+                    value={followForm.titulo}
+                    onChange={(e) => setFollowForm(f => ({ ...f, titulo: e.target.value }))}
+                    placeholder="Ex: Confirmar apoio no bairro..."
+                    required
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Observações</label>
+                  <textarea
+                    value={followForm.descricao}
+                    onChange={(e) => setFollowForm(f => ({ ...f, descricao: e.target.value }))}
+                    placeholder="Detalhes, pontos a discutir..."
+                    rows={3}
+                    className={inputCls + ' resize-none'}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 uppercase tracking-wider block mb-1.5">Data e Hora *</label>
+                  <input
+                    type="datetime-local"
+                    value={followForm.data_agendada}
+                    onChange={(e) => setFollowForm(f => ({ ...f, data_agendada: e.target.value }))}
+                    required
+                    className={inputCls}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingFollow}
+                  className="w-full py-3 bg-[#e11d48] hover:bg-[#c81940] disabled:opacity-60
+                    text-white rounded-xl font-bold text-sm transition-colors
+                    flex items-center justify-center gap-2"
+                >
+                  {savingFollow && (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {savingFollow ? 'Agendando...' : '📅 Agendar Follow-up'}
+                </button>
+
+                {/* Quick-add presets */}
+                <div className="pt-2 border-t border-[#002b5c]/60">
+                  <p className="text-xs text-slate-600 mb-2">Atalhos rápidos:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: 'Amanhã', days: 1 },
+                      { label: '1 semana', days: 7 },
+                      { label: '1 mês', days: 30 },
+                    ].map(({ label, days }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          const d = new Date()
+                          d.setDate(d.getDate() + days)
+                          d.setHours(10, 0, 0, 0)
+                          const local = d.toISOString().slice(0, 16)
+                          setFollowForm(f => ({ ...f, data_agendada: local }))
+                        }}
+                        className="px-2 py-1 bg-[#002b5c]/50 hover:bg-[#002b5c] border border-[#003d82]/40
+                          text-xs text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════
+            ABA 4: EDITAR CADASTRO (IA pré-preenche)
         ══════════════════════════════════════════════ */}
         {activeTab === 'cadastro' && editForm && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

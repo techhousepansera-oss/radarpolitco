@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabaseClient'
 import ListagemPage from './pages/ListagemPage'
 import DetalhesPage from './pages/DetalhesPage'
+import AnalyticsPage from './pages/AnalyticsPage'
 import LoginPage from './pages/LoginPage'
 import LoadingSpinner from './components/LoadingSpinner'
 
@@ -37,6 +38,10 @@ export default function App() {
         <Route
           path="/lideranca/:id"
           element={session ? <DetalhesPage session={session} /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/analytics"
+          element={session ? <AnalyticsPage session={session} /> : <Navigate to="/login" replace />}
         />
       </Routes>
     </BrowserRouter>
