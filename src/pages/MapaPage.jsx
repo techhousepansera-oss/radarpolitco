@@ -128,8 +128,8 @@ export default function MapaPage() {
       done++
       setProgress(Math.round((done / municipios.length) * 100))
 
-      // Rate limit: Nominatim asks for max 1 req/sec
-      setTimeout(() => processNext(i + 1), 200)
+      // Rate limit: Nominatim asks for max 1 req/sec — usar 1100ms para ter margem
+      setTimeout(() => processNext(i + 1), 1100)
     }
 
     processNext(0)
@@ -209,7 +209,7 @@ export default function MapaPage() {
       </header>
 
       {/* ── Map ── */}
-      <div className="flex-1 relative" style={{ minHeight: 'calc(100vh - 73px)' }}>
+      <div style={{ height: 'calc(100vh - 73px)' }} className="relative overflow-hidden">
 
         {/* Geocoding progress overlay */}
         {geocoding && (

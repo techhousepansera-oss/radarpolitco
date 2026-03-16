@@ -149,6 +149,10 @@ export default function DetalhesPage() {
   // TTS Web Speech
   const [speaking, setSpeaking] = useState(false)
 
+  // Transcription pagination
+  const [showAllBlocks, setShowAllBlocks] = useState(false)
+  const BLOCKS_LIMIT = 20
+
   // Copy to clipboard
   const [copied, setCopied] = useState(false)
   const copyResumo = async () => {
@@ -309,6 +313,14 @@ export default function DetalhesPage() {
   const metas = analise?.metas || {}
   const totalVotos = (Number(lider.meta_votos_caxias) || 0) + (Number(lider.meta_votos_estado) || 0)
   const blocosTranscricao = formatTranscricao(entrevista?.transcricao_bruta)
+  const displayedBlocks = showAllBlocks ? blocosTranscricao : blocosTranscricao.slice(0, BLOCKS_LIMIT)
+
+  // Detecta análise falha/incompleta (n8n falhou ou retornou dados padrão)
+  const analiseIncompleta =
+    !analise ||
+    lider.nome_completo === 'Erro na análise' ||
+    lider.nome_completo === 'N/A' ||
+    lider.apelido_politico === 'N/A'
 
   return (
     <div className="min-h-screen bg-[#00101f]">
@@ -430,8 +442,9 @@ export default function DetalhesPage() {
           </div>
         </div>
 
-        {/* ── Tabs ── */}
-        <div className="flex gap-1 bg-[#001733] border border-[#002b5c] rounded-2xl p-1.5 mb-6">
+        {/* ── Tabs — sticky abaixo do header ── */}
+        <div className="flex gap-1 bg-[#001733] border border-[#002b5c] rounded-2xl p-1.5 mb-6
+          sticky top-[73px] z-30 shadow-lg shadow-[#00101f]/80">
           {[
             { id: 'dossie',     label: 'Dossiê',        icon: '🧠' },
             { id: 'transcricao',label: 'Transcrição',   icon: '📝' },
@@ -459,6 +472,24 @@ export default function DetalhesPage() {
             </button>
           ))}
         </div>
+
+        {/* ── Banner: Análise Incompleta ── */}
+        {analiseIncompleta && (
+          <div className="flex items-start gap-3 mb-6 px-4 py-4 bg-amber-500/10 border border-amber-500/30
+            rounded-2xl">
+            <svg className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-300 mb-0.5">Análise incompleta — pipeline n8n falhou</p>
+              <p className="text-xs text-amber-400/70 leading-relaxed">
+                O Claude não conseguiu processar a entrevista (provável limite de tokens excedido na transcrição longa).
+                Acesse <button onClick={() => setActiveTab('cadastro')} className="underline hover:text-amber-300 transition-colors">Editar Cadastro</button> para preencher os dados manualmente, ou faça novo upload com um áudio mais curto.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ══════════════════════════════════════════════
             ABA 1: DOSSIÊ
@@ -716,14 +747,24 @@ export default function DetalhesPage() {
             ) : (
               <>
                 {/* Info header */}
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                       Transcrição Deepgram · Formatada por IA
                     </span>
                     <span className="text-xs bg-[#002b5c] text-slate-400 px-2 py-0.5 rounded-full">
                       {blocosTranscricao.length} blocos
                     </span>
+                    {entrevista?.transcricao_bruta && (
+                      <span className="text-xs bg-[#002b5c]/60 text-slate-500 px-2 py-0.5 rounded-full">
+                        ~{Math.round(entrevista.transcricao_bruta.split(/\s+/).length / 150)} min de fala
+                      </span>
+                    )}
+                    {blocosTranscricao.length > BLOCKS_LIMIT && !showAllBlocks && (
+                      <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/25 px-2 py-0.5 rounded-full">
+                        Mostrando {BLOCKS_LIMIT}/{blocosTranscricao.length}
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs text-slate-600">
                     {entrevista?.created_at ? formatDate(entrevista.created_at) : ''}
@@ -732,7 +773,7 @@ export default function DetalhesPage() {
 
                 {/* Blocos */}
                 <div className="space-y-3">
-                  {blocosTranscricao.map((bloco, i) => {
+                  {displayedBlocks.map((bloco, i) => {
                     if (bloco.tipo === 'pergunta') {
                       return (
                         <div key={i} className="flex gap-3">
@@ -772,6 +813,32 @@ export default function DetalhesPage() {
                     )
                   })}
                 </div>
+
+                {/* Botão Ver mais / Ver menos */}
+                {blocosTranscricao.length > BLOCKS_LIMIT && (
+                  <button
+                    onClick={() => setShowAllBlocks((v) => !v)}
+                    className="w-full py-3 bg-[#002b5c]/40 hover:bg-[#002b5c] border border-[#003d82]/40
+                      text-slate-400 hover:text-white rounded-xl text-sm font-medium transition-colors
+                      flex items-center justify-center gap-2"
+                  >
+                    {showAllBlocks ? (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                        Recolher ({blocosTranscricao.length - BLOCKS_LIMIT} blocos ocultos)
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                        Ver todos ({blocosTranscricao.length - BLOCKS_LIMIT} blocos restantes)
+                      </>
+                    )}
+                  </button>
+                )}
 
                 {/* Transcrição bruta como referência */}
                 <details className="bg-[#001428] border border-[#002b5c]/50 rounded-2xl overflow-hidden mt-4">
