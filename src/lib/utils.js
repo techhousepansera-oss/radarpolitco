@@ -3,29 +3,63 @@
  * The n8n flow saves the raw AI Agent output as a string.
  * This function handles: plain JSON, JSON with markdown code blocks,
  * and JSON embedded in text.
+ *
+ * Also normalizes the structure so that resumo_executivo is always
+ * inside analise_fria — the n8n prompt historically places it at root level.
  */
 export function parseAnalise(analise_json) {
   if (!analise_json) return null
-  if (typeof analise_json === 'object') return analise_json
 
-  try {
-    // Strip markdown code fences that the AI sometimes includes
-    const cleaned = analise_json
-      .replace(/```json\s*/gi, '')
-      .replace(/```\s*/gi, '')
-      .trim()
-    return JSON.parse(cleaned)
-  } catch {
-    // Fallback: extract the first {...} block from the string
-    const match = analise_json.match(/\{[\s\S]*\}/)
-    if (match) {
-      try {
-        return JSON.parse(match[0])
-      } catch {
-        return null
+  let parsed = null
+
+  if (typeof analise_json === 'object') {
+    parsed = analise_json
+  } else {
+    try {
+      // Strip markdown code fences that the AI sometimes includes
+      const cleaned = analise_json
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/gi, '')
+        .trim()
+      parsed = JSON.parse(cleaned)
+    } catch {
+      // Fallback: extract the first {...} block from the string
+      const match = analise_json.match(/\{[\s\S]*\}/)
+      if (match) {
+        try {
+          parsed = JSON.parse(match[0])
+        } catch {
+          return null
+        }
       }
+      if (!parsed) return null
     }
-    return null
+  }
+
+  return normalizeAnalise(parsed)
+}
+
+/**
+ * Normalizes the parsed analysis object to a consistent structure.
+ *
+ * The n8n Claude prompt places `resumo_executivo` at the ROOT of the JSON,
+ * but the frontend always reads it from `analise_fria.resumo_executivo`.
+ * This function moves it into analise_fria if it's at root.
+ */
+function normalizeAnalise(data) {
+  if (!data || typeof data !== 'object') return null
+
+  // Move resumo_executivo from root into analise_fria (n8n prompt quirk)
+  const af = data.analise_fria || {}
+  const resumo = af.resumo_executivo || data.resumo_executivo || null
+
+  return {
+    ...data,
+    bairros: Array.isArray(data.bairros) ? data.bairros : [],
+    analise_fria: {
+      ...af,
+      resumo_executivo: resumo,
+    },
   }
 }
 
