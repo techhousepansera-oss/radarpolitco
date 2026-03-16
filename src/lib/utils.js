@@ -125,3 +125,21 @@ export function formatDate(dateStr) {
     year: 'numeric',
   })
 }
+
+/** Returns relative time string in pt-BR ("há 2 dias", "há 3 horas", etc.) */
+export function timeAgo(dateStr) {
+  if (!dateStr) return '—'
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const min  = Math.floor(diff / 60000)
+  const h    = Math.floor(diff / 3600000)
+  const d    = Math.floor(diff / 86400000)
+  const mo   = Math.floor(d / 30)
+  const yr   = Math.floor(d / 365)
+  if (min < 1)   return 'agora mesmo'
+  if (min < 60)  return `há ${min} min`
+  if (h < 24)    return `há ${h}h`
+  if (d < 2)     return 'ontem'
+  if (d < 30)    return `há ${d} dias`
+  if (mo < 12)   return `há ${mo} ${mo === 1 ? 'mês' : 'meses'}`
+  return `há ${yr} ${yr === 1 ? 'ano' : 'anos'}`
+}

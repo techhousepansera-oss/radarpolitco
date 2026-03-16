@@ -5,6 +5,8 @@ import { parseAnalise, formatVotes, formatDate, getFidelidadeConfig } from '../l
 import FidelidadeBadge from '../components/FidelidadeBadge'
 import AudioPlayer from '../components/AudioPlayer'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { ToastContainer } from '../components/Toast'
+import { useToast } from '../hooks/useToast'
 
 const STATUS_OPTIONS = ['Fiel', 'Leal', 'Observando', 'Moderado', 'Em Risco', 'Baixa Fidelidade', 'Crítico']
 
@@ -82,6 +84,7 @@ function formatTranscricao(texto) {
 export default function DetalhesPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { toasts, toast, dismiss } = useToast()
   const [lider, setLider] = useState(null)
   const [entrevista, setEntrevista] = useState(null)
   const [analise, setAnalise] = useState(null)
@@ -94,11 +97,25 @@ export default function DetalhesPage() {
   // Edit form
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [saveMsg, setSaveMsg] = useState(null)
   const savingRef = useRef(false)
 
   // TTS Web Speech
   const [speaking, setSpeaking] = useState(false)
+
+  // Copy to clipboard
+  const [copied, setCopied] = useState(false)
+  const copyResumo = async () => {
+    const text = analise?.analise_fria?.resumo_executivo
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      toast('Resumo copiado para a área de transferência', 'success')
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast('Não foi possível copiar', 'error')
+    }
+  }
 
   // Delete
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -112,7 +129,7 @@ export default function DetalhesPage() {
       if (err) throw err
       navigate('/')
     } catch (e) {
-      alert('Erro ao apagar: ' + e.message)
+      toast('Erro ao apagar: ' + e.message, 'error')
       setDeleting(false)
       setConfirmDelete(false)
     }
@@ -189,7 +206,6 @@ export default function DetalhesPage() {
     if (savingRef.current) return
     savingRef.current = true
     setSaving(true)
-    setSaveMsg(null)
     const payload = {
       nome_completo:        editForm.nome_completo,
       apelido_politico:     editForm.apelido_politico || null,
@@ -205,11 +221,10 @@ export default function DetalhesPage() {
     setSaving(false)
     savingRef.current = false
     if (err) {
-      setSaveMsg({ type: 'error', text: err.message })
+      toast(err.message, 'error')
     } else {
       setLider((prev) => ({ ...prev, ...payload }))
-      setSaveMsg({ type: 'success', text: 'Cadastro atualizado com sucesso!' })
-      setTimeout(() => setSaveMsg(null), 3000)
+      toast('Cadastro atualizado com sucesso!', 'success')
     }
   }
 
@@ -398,33 +413,67 @@ export default function DetalhesPage() {
                 subtitle="Claude 4.5 — para ler no carro"
                 icon={<DocIcon />}
                 action={
-                  af.resumo_executivo && 'speechSynthesis' in window ? (
-                    <button
-                      onClick={speakSummary}
-                      title={speaking ? 'Parar áudio' : 'Ouvir resumo'}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
-                        transition-all border ${
-                        speaking
-                          ? 'bg-[#e11d48]/20 border-[#e11d48]/40 text-[#e11d48] animate-pulse'
-                          : 'bg-[#002b5c]/60 border-[#003d82]/40 text-slate-300 hover:text-white hover:bg-[#002b5c]'
-                      }`}
-                    >
-                      {speaking ? (
-                        <>
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                            <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
-                          </svg>
-                          Parar
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-                          </svg>
-                          Ouvir
-                        </>
+                  af.resumo_executivo ? (
+                    <div className="flex items-center gap-1.5">
+                      {/* Copy button */}
+                      <button
+                        onClick={copyResumo}
+                        title="Copiar resumo"
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold
+                          transition-all border ${
+                          copied
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                            : 'bg-[#002b5c]/60 border-[#003d82]/40 text-slate-300 hover:text-white hover:bg-[#002b5c]'
+                        }`}
+                      >
+                        {copied ? (
+                          <>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Copiado
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copiar
+                          </>
+                        )}
+                      </button>
+
+                      {/* TTS button */}
+                      {'speechSynthesis' in window && (
+                        <button
+                          onClick={speakSummary}
+                          title={speaking ? 'Parar áudio' : 'Ouvir resumo'}
+                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold
+                            transition-all border ${
+                            speaking
+                              ? 'bg-[#e11d48]/20 border-[#e11d48]/40 text-[#e11d48] animate-pulse'
+                              : 'bg-[#002b5c]/60 border-[#003d82]/40 text-slate-300 hover:text-white hover:bg-[#002b5c]'
+                          }`}
+                        >
+                          {speaking ? (
+                            <>
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                <rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" />
+                              </svg>
+                              Parar
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                              </svg>
+                              Ouvir
+                            </>
+                          )}
+                        </button>
                       )}
-                    </button>
+                    </div>
                   ) : null
                 }
               >
@@ -481,6 +530,27 @@ export default function DetalhesPage() {
                         <p className="text-sm text-slate-200">{hist.vinculo_pansera}</p>
                       </div>
                     )}
+                  </div>
+                </InfoCard>
+              )}
+
+              {/* Bairros / Territórios de Influência */}
+              {analise?.bairros && analise.bairros.length > 0 && (
+                <InfoCard title="Territórios de Influência" subtitle="Bairros mapeados na entrevista" icon={<MapIcon />}>
+                  <div className="flex flex-wrap gap-2">
+                    {(Array.isArray(analise.bairros) ? analise.bairros : String(analise.bairros).split(/[,;]+/))
+                      .map((b, i) => String(b).trim()).filter(Boolean).map((bairro, i) => (
+                      <span
+                        key={i}
+                        className="px-2.5 py-1 bg-[#002b5c]/60 border border-[#003d82]/50
+                          rounded-lg text-xs font-medium text-slate-300 flex items-center gap-1.5"
+                      >
+                        <svg className="w-2.5 h-2.5 text-[#e11d48] shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                        </svg>
+                        {bairro}
+                      </span>
+                    ))}
                   </div>
                 </InfoCard>
               )}
@@ -556,7 +626,9 @@ export default function DetalhesPage() {
               <InfoCard title="Diagnóstico IA" icon={<BulbIcon />}>
                 <div className="space-y-2.5">
                   <DiagRow label="Status" value={<FidelidadeBadge status={lider.status_fidelidade} size="sm" />} />
-                  {entrevista?.score_fidelidade && <DiagRow label="Score IA" value={entrevista.score_fidelidade} />}
+                  {entrevista?.score_fidelidade && (
+                    <ScoreRow score={entrevista.score_fidelidade} />
+                  )}
                   {analise?.perfil?.profissao && <DiagRow label="Profissão" value={analise.perfil.profissao} />}
                   {analise?.perfil?.distrito && <DiagRow label="Distrito" value={analise.perfil.distrito} />}
                   {lider.created_at && <DiagRow label="Cadastrado" value={formatDate(lider.created_at)} />}
@@ -800,19 +872,20 @@ export default function DetalhesPage() {
                         placeholder="https://..."
                         className={inputCls}
                       />
+                      {editForm.foto_url && (
+                        <div className="mt-2 flex items-center gap-3">
+                          <img
+                            src={editForm.foto_url}
+                            alt="Preview"
+                            className="w-12 h-12 rounded-xl object-cover border border-[#003d82]/60 shrink-0"
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
+                          />
+                          <span className="text-xs text-slate-500">Preview da foto</span>
+                        </div>
+                      )}
                     </EditField>
 
                   </div>
-
-                  {saveMsg && (
-                    <div className={`px-4 py-3 rounded-xl border text-sm font-medium ${
-                      saveMsg.type === 'success'
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                    }`}>
-                      {saveMsg.text}
-                    </div>
-                  )}
 
                   <div className="flex gap-3 pt-2">
                     <button
@@ -833,7 +906,6 @@ export default function DetalhesPage() {
                           perfil_social_link:   lider.perfil_social_link || '',
                           foto_url:             lider.foto_url || '',
                         })
-                        setSaveMsg(null)
                       }}
                       className="flex-1 py-3 bg-[#002b5c]/50 hover:bg-[#002b5c] border border-[#003d82]/40
                         text-slate-300 rounded-xl font-semibold text-sm transition-colors"
@@ -928,8 +1000,7 @@ export default function DetalhesPage() {
                       meta_votos_caxias:    m.votos_caxias || f.meta_votos_caxias,
                       meta_votos_estado:    m.votos_estado || f.meta_votos_estado,
                     }))
-                    setSaveMsg({ type: 'success', text: 'Sugestões da IA aplicadas! Revise e salve.' })
-                    setTimeout(() => setSaveMsg(null), 4000)
+                    toast('Sugestões da IA aplicadas! Revise e salve.', 'info')
                   }}
                   className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl
                     font-bold text-sm transition-colors flex items-center justify-center gap-2"
@@ -998,6 +1069,8 @@ export default function DetalhesPage() {
           </div>
         </div>
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }
@@ -1095,6 +1168,42 @@ function MetricRow({ label, value, highlight }) {
   )
 }
 
+/** Parses score from AI output: "8/10", "75", "0.8", "8" → value 0–100 */
+function parseScore(raw) {
+  if (!raw) return null
+  const s = String(raw).trim()
+  const slash = s.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+)$/)
+  if (slash) return Math.round((parseFloat(slash[1]) / parseFloat(slash[2])) * 100)
+  const pct = parseFloat(s.replace('%', ''))
+  if (!isNaN(pct)) {
+    if (pct <= 1) return Math.round(pct * 100)
+    if (pct <= 10) return Math.round(pct * 10)
+    return Math.round(pct)
+  }
+  return null
+}
+
+function ScoreRow({ score }) {
+  const pct = parseScore(score)
+  const color = pct === null ? 'bg-slate-500' : pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-500' : 'bg-rose-500'
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-slate-500">Score IA</span>
+        <span className="text-xs font-bold text-slate-300">{String(score)}</span>
+      </div>
+      {pct !== null && (
+        <div className="h-1.5 bg-[#002b5c] rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${color}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DiagRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-2">
@@ -1166,5 +1275,13 @@ const BulbIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+  </svg>
+)
+const MapIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 )

@@ -1,22 +1,26 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import { formatVotes, formatDate } from '../lib/utils'
+import { formatVotes, formatDate, timeAgo } from '../lib/utils'
 import FidelidadeBadge from '../components/FidelidadeBadge'
 import LoadingSpinner from '../components/LoadingSpinner'
 import UploadAudio from '../components/UploadAudio'
 import NovaLiderancaModal from '../components/NovaLiderancaModal'
+import { ToastContainer } from '../components/Toast'
+import { useToast } from '../hooks/useToast'
 
 const PAGE_SIZE = 18
 
 export default function ListagemPage({ session }) {
   const navigate = useNavigate()
+  const { toasts, toast, dismiss } = useToast()
   const [liderancas, setLiderancas] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showUpload, setShowUpload] = useState(false)
   const [showNovaLideranca, setShowNovaLideranca] = useState(false)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showMobileSearch, setShowMobileSearch] = useState(false)
   const [filterStatus, setFilterStatus] = useState('todos')
   const [sortBy, setSortBy] = useState('recente')
@@ -28,15 +32,16 @@ export default function ListagemPage({ session }) {
   const channelRef = useRef(null)
   const processingTimerRef = useRef(null)
   const mobileSearchRef = useRef(null)
+  const desktopSearchRef = useRef(null)
 
-  const fetchLiderancas = async () => {
+  const fetchLiderancas = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const { data, error: err } = await supabase
         .from('liderancas')
         .select('*')
-        .order('id', { ascending: false })
+        .order('criado_em', { ascending: false })
       if (err) throw err
       setLiderancas(data || [])
     } catch (err) {
@@ -44,11 +49,17 @@ export default function ListagemPage({ session }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
+
+  // Debounce search input (300 ms)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   useEffect(() => {
     fetchLiderancas()
@@ -70,8 +81,11 @@ export default function ListagemPage({ session }) {
       })
 
     channelRef.current = channel
-    return () => { supabase.removeChannel(channel) }
-  }, [])
+    return () => {
+      channel.unsubscribe()
+      supabase.removeChannel(channel)
+    }
+  }, [fetchLiderancas])
 
   // Auto-focus mobile search when opened
   useEffect(() => {
@@ -79,6 +93,19 @@ export default function ListagemPage({ session }) {
       setTimeout(() => mobileSearchRef.current?.focus(), 50)
     }
   }, [showMobileSearch])
+
+  // Keyboard shortcut "/" — focuses desktop search
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== '/') return
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      e.preventDefault()
+      desktopSearchRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Clean up processing banner timer
   useEffect(() => {
@@ -88,6 +115,7 @@ export default function ListagemPage({ session }) {
   const handleDeleteLider = async () => {
     if (!confirmDelete) return
     setDeleting(true)
+    const nome = confirmDelete.nome
     try {
       // 1. Apaga entrevistas vinculadas primeiro (cascata)
       await supabase.from('entrevistas').delete().eq('lider_id', confirmDelete.id)
@@ -96,13 +124,45 @@ export default function ListagemPage({ session }) {
       if (err) throw err
       // Remove do estado local imediatamente (realtime pode demorar)
       setLiderancas((prev) => prev.filter((l) => l.id !== confirmDelete.id))
+      toast(`${nome} removido com sucesso`, 'success')
     } catch (e) {
-      alert('Erro ao apagar: ' + e.message)
+      toast('Erro ao apagar: ' + e.message, 'error')
     } finally {
       setDeleting(false)
       setConfirmDelete(null)
     }
   }
+
+  const handleExportCSV = useCallback(() => {
+    if (!liderancas.length) {
+      toast('Nenhuma liderança para exportar', 'warning')
+      return
+    }
+    const headers = [
+      'Nome Completo', 'Apelido Político', 'Território', 'Município',
+      'Status Fidelidade', 'Meta Caxias', 'Meta Estado', 'Cadastrado em',
+    ]
+    const rows = liderancas.map((l) => [
+      l.nome_completo || '',
+      l.apelido_politico || '',
+      l.territorio_principal || '',
+      l.municipio || '',
+      l.status_fidelidade || '',
+      l.meta_votos_caxias || 0,
+      l.meta_votos_estado || 0,
+      formatDate(l.criado_em || l.created_at),
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `radar-politico-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast(`${liderancas.length} lideranças exportadas`, 'success')
+  }, [liderancas, toast])
 
   const handleUploadSuccess = () => {
     setShowUpload(false)
@@ -111,55 +171,69 @@ export default function ListagemPage({ session }) {
     processingTimerRef.current = setTimeout(() => setProcessingBanner(false), 3 * 60 * 1000)
   }
 
-  // Filter
-  const filtered = liderancas.filter((l) => {
-    const q = search.toLowerCase()
-    const matchSearch =
-      !search ||
-      l.nome_completo?.toLowerCase().includes(q) ||
-      l.apelido_politico?.toLowerCase().includes(q) ||
-      l.territorio_principal?.toLowerCase().includes(q) ||
-      l.municipio?.toLowerCase().includes(q)
+  // Filter + Sort with useMemo for performance (uses debouncedSearch)
+  const sorted = useMemo(() => {
+    const q = debouncedSearch.toLowerCase()
+    const getDate = (l) => new Date(l.criado_em || l.created_at || 0).getTime()
 
-    const s = l.status_fidelidade?.toLowerCase() || ''
-    const matchFilter =
-      filterStatus === 'todos' ||
-      (filterStatus === 'fiel' && (s.includes('fiel') || s.includes('leal'))) ||
-      (filterStatus === 'observando' && (s.includes('observando') || s.includes('neutro') || s.includes('moderado'))) ||
-      (filterStatus === 'risco' && (s.includes('risco') || s.includes('baixa') || s.includes('critico') || s.includes('traição')))
+    const filtered = liderancas.filter((l) => {
+      const matchSearch =
+        !debouncedSearch ||
+        l.nome_completo?.toLowerCase().includes(q) ||
+        l.apelido_politico?.toLowerCase().includes(q) ||
+        l.territorio_principal?.toLowerCase().includes(q) ||
+        l.municipio?.toLowerCase().includes(q)
 
-    return matchSearch && matchFilter
-  })
+      const s = l.status_fidelidade?.toLowerCase() || ''
+      const matchFilter =
+        filterStatus === 'todos' ||
+        (filterStatus === 'fiel' && (s.includes('fiel') || s.includes('leal'))) ||
+        (filterStatus === 'observando' && (s.includes('observando') || s.includes('neutro') || s.includes('moderado'))) ||
+        (filterStatus === 'risco' && (s.includes('risco') || s.includes('baixa') || s.includes('critico') || s.includes('traição')))
 
-  // Sort
-  const getDate = (l) => new Date(l.criado_em || l.created_at || 0).getTime()
-  const sorted = [...filtered].sort((a, b) => {
-    if (sortBy === 'recente') return getDate(b) - getDate(a)
-    if (sortBy === 'az') return (a.apelido_politico || a.nome_completo || '').localeCompare(b.apelido_politico || b.nome_completo || '', 'pt-BR')
-    if (sortBy === 'votos') return (Number(b.meta_votos_caxias) || 0) - (Number(a.meta_votos_caxias) || 0)
-    if (sortBy === 'status') {
-      const order = { fiel: 0, leal: 0, observando: 1, moderado: 1, neutro: 1, risco: 2, baixa: 2, critico: 2 }
-      const getOrder = (l) => {
-        const s = l.status_fidelidade?.toLowerCase() || ''
-        return Object.entries(order).find(([k]) => s.includes(k))?.[1] ?? 3
+      return matchSearch && matchFilter
+    })
+
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'recente') return getDate(b) - getDate(a)
+      if (sortBy === 'az') return (a.apelido_politico || a.nome_completo || '').localeCompare(b.apelido_politico || b.nome_completo || '', 'pt-BR')
+      if (sortBy === 'votos') return (Number(b.meta_votos_caxias) || 0) - (Number(a.meta_votos_caxias) || 0)
+      if (sortBy === 'status') {
+        const order = { fiel: 0, leal: 0, observando: 1, moderado: 1, neutro: 1, risco: 2, baixa: 2, critico: 2 }
+        const getOrder = (l) => {
+          const s = l.status_fidelidade?.toLowerCase() || ''
+          return Object.entries(order).find(([k]) => s.includes(k))?.[1] ?? 3
+        }
+        return getOrder(a) - getOrder(b)
       }
-      return getOrder(a) - getOrder(b)
-    }
-    return 0
-  })
+      return 0
+    })
+  }, [liderancas, debouncedSearch, filterStatus, sortBy])
 
   const visible = sorted.slice(0, displayLimit)
   const hasMore = sorted.length > displayLimit
 
-  const stats = {
-    total: liderancas.length,
-    metaCaxias: liderancas.reduce((acc, l) => acc + (Number(l.meta_votos_caxias) || 0), 0),
-    emRisco: liderancas.filter((l) => {
+  const stats = useMemo(() => {
+    const fieis = liderancas.filter((l) => {
+      const s = l.status_fidelidade?.toLowerCase() || ''
+      return s.includes('fiel') || s.includes('leal')
+    }).length
+    const observando = liderancas.filter((l) => {
+      const s = l.status_fidelidade?.toLowerCase() || ''
+      return s.includes('observando') || s.includes('neutro') || s.includes('moderado')
+    }).length
+    const emRisco = liderancas.filter((l) => {
       const s = l.status_fidelidade?.toLowerCase() || ''
       return s.includes('risco') || s.includes('baixa') || s.includes('critico')
-    }).length,
-    fieis: liderancas.filter((l) => l.status_fidelidade?.toLowerCase().includes('fiel')).length,
-  }
+    }).length
+    return {
+      total: liderancas.length,
+      metaCaxias: liderancas.reduce((acc, l) => acc + (Number(l.meta_votos_caxias) || 0), 0),
+      emRisco,
+      fieis,
+      filterCounts: { todos: liderancas.length, fiel: fieis, observando, risco: emRisco },
+    }
+  }, [liderancas])
 
   if (loading) {
     return (
@@ -220,8 +294,9 @@ export default function ListagemPage({ session }) {
                 d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
+              ref={desktopSearchRef}
               type="text"
-              placeholder="Buscar liderança, território..."
+              placeholder="Buscar liderança, território... (pressione /)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 bg-[#002b5c]/40 border border-[#002b5c] rounded-xl
@@ -265,6 +340,19 @@ export default function ListagemPage({ session }) {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+
+            {/* Export CSV — desktop */}
+            <button
+              onClick={handleExportCSV}
+              title="Exportar CSV"
+              className="hidden md:flex w-9 h-9 rounded-xl border border-[#002b5c] hover:bg-[#002b5c]/60
+                items-center justify-center text-slate-400 hover:text-white transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             </button>
 
@@ -384,19 +472,29 @@ export default function ListagemPage({ session }) {
             { key: 'fiel', label: 'Fiéis' },
             { key: 'observando', label: 'Observando' },
             { key: 'risco', label: 'Em Risco' },
-          ].map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => { setFilterStatus(key); setDisplayLimit(PAGE_SIZE) }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                filterStatus === key
-                  ? 'bg-[#e11d48] text-white'
-                  : 'bg-[#002b5c]/50 text-slate-400 hover:bg-[#002b5c] hover:text-white'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          ].map(({ key, label }) => {
+            const count = stats.filterCounts[key] ?? 0
+            return (
+              <button
+                key={key}
+                onClick={() => { setFilterStatus(key); setDisplayLimit(PAGE_SIZE) }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  filterStatus === key
+                    ? 'bg-[#e11d48] text-white'
+                    : 'bg-[#002b5c]/50 text-slate-400 hover:bg-[#002b5c] hover:text-white'
+                }`}
+              >
+                {label}
+                {count > 0 && (
+                  <span className={`text-[10px] font-black px-1 py-0.5 rounded leading-none ${
+                    filterStatus === key ? 'bg-white/20 text-white' : 'bg-[#002b5c] text-slate-400'
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
 
           {/* Sort dropdown */}
           <select
@@ -476,11 +574,16 @@ export default function ListagemPage({ session }) {
       {showNovaLideranca && (
         <NovaLiderancaModal
           onClose={() => setShowNovaLideranca(false)}
-          onSuccess={() => setShowNovaLideranca(false)}
+          onSuccess={() => {
+            setShowNovaLideranca(false)
+            toast('Liderança cadastrada com sucesso!', 'success')
+          }}
         />
       )}
 
       {/* ── Modal de Confirmação de Exclusão ── */}
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+
       {confirmDelete && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
@@ -553,6 +656,11 @@ function StatCard({ icon, label, value, color }) {
 
 function LiderancaCard({ lider, onClick, onDelete }) {
   const initial = (lider.apelido_politico || lider.nome_completo || '?').charAt(0).toUpperCase()
+  const isNew = (() => {
+    const created = lider.criado_em || lider.created_at
+    if (!created) return false
+    return Date.now() - new Date(created).getTime() < 24 * 60 * 60 * 1000
+  })()
 
   return (
     <div
@@ -561,6 +669,14 @@ function LiderancaCard({ lider, onClick, onDelete }) {
         hover:border-[#e11d48]/40 rounded-2xl p-5 transition-all duration-200
         hover:bg-[#001f45] hover:shadow-xl hover:shadow-[#e11d48]/5 relative"
     >
+      {/* Badge "Novo" — últimas 24h */}
+      {isNew && (
+        <span className="absolute top-3 left-3 z-10 px-1.5 py-0.5 text-[10px] font-black
+          bg-emerald-500 text-white rounded-md tracking-wide leading-none">
+          NOVO
+        </span>
+      )}
+
       {/* Botão de deletar — aparece no hover */}
       <button
         onClick={onDelete}
@@ -627,7 +743,12 @@ function LiderancaCard({ lider, onClick, onDelete }) {
 
       {/* Footer */}
       <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#002b5c]/50">
-        <span className="text-xs text-slate-600">{formatDate(lider.criado_em || lider.created_at)}</span>
+        <span
+          className="text-xs text-slate-600"
+          title={formatDate(lider.criado_em || lider.created_at)}
+        >
+          {timeAgo(lider.criado_em || lider.created_at)}
+        </span>
         {lider.municipio && (
           <span className="text-xs text-slate-500 bg-[#002b5c]/40 px-2 py-0.5 rounded-full">
             {lider.municipio}
