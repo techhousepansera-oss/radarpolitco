@@ -651,31 +651,72 @@ export default function DetalhesPage() {
 
             {/* Coluna direita */}
             <div className="space-y-5">
-              <InfoCard title="Projeção de Votos" icon={<ChartIcon />}>
+              <InfoCard title="Projeção de Votos" icon={<ChartIcon />}
+                action={
+                  (!lider.meta_votos_caxias && !lider.meta_votos_estado) ? (
+                    <button
+                      onClick={() => setActiveTab('cadastro')}
+                      className="text-xs text-amber-400 hover:text-amber-300 border border-amber-500/30
+                        hover:border-amber-500/50 px-2 py-1 rounded-lg transition-colors font-medium"
+                    >
+                      + Definir
+                    </button>
+                  ) : null
+                }
+              >
                 <div className="space-y-2.5">
-                  <MetricRow label="Meta Caxias" value={formatVotes(lider.meta_votos_caxias)} />
-                  <MetricRow label="Meta Estado" value={formatVotes(lider.meta_votos_estado)} />
-                  {entrevista?.expectativa_votos_declarada && (
+                  <MetricRow label="Meta Caxias"
+                    value={lider.meta_votos_caxias ? formatVotes(lider.meta_votos_caxias) : '—'}
+                  />
+                  <MetricRow label="Meta Estado"
+                    value={lider.meta_votos_estado ? formatVotes(lider.meta_votos_estado) : '—'}
+                  />
+                  {entrevista?.expectativa_votos_declarada > 0 && (
                     <MetricRow label="Declarado" value={formatVotes(entrevista.expectativa_votos_declarada)} />
                   )}
                   <div className="border-t border-[#002b5c] pt-2.5 mt-2">
-                    <MetricRow label="Total Esperado" value={formatVotes(totalVotos)} highlight />
+                    <MetricRow label="Total Esperado"
+                      value={totalVotos ? formatVotes(totalVotos) : '—'}
+                      highlight
+                    />
                   </div>
                   {(metas.votos_caxias || metas.votos_estado) && (
                     <p className="text-xs text-slate-600 bg-[#002b5c]/30 rounded-lg p-2 leading-relaxed">
                       IA estimou: {formatVotes(metas.votos_caxias)} (Caxias) + {formatVotes(metas.votos_estado)} (Estado)
                     </p>
                   )}
+                  {!lider.meta_votos_caxias && !lider.meta_votos_estado && (
+                    <p className="text-xs text-amber-500/70 text-center pt-1">
+                      A IA não detectou metas de votos — defina manualmente em Editar Cadastro
+                    </p>
+                  )}
                 </div>
               </InfoCard>
 
+              {/* Áudio TTS */}
               <InfoCard title="Áudio do Resumo" subtitle="TTS · OpenAI Onyx" icon={<MusicIcon />}>
-                <AudioPlayer
-                  src={entrevista?.audio_url}
-                  title={lider.apelido_politico || lider.nome_completo}
-                />
+                {entrevista?.audio_url ? (
+                  <AudioPlayer
+                    src={entrevista.audio_url}
+                    title={lider.apelido_politico || lider.nome_completo}
+                  />
+                ) : (
+                  <div className="flex items-start gap-2.5 p-3 bg-slate-800/30 rounded-xl">
+                    <svg className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                    </svg>
+                    <div>
+                      <p className="text-xs font-medium text-slate-500">Áudio não gerado</p>
+                      <p className="text-xs text-slate-700 mt-0.5 leading-relaxed">
+                        Ative o nó <strong className="text-slate-600">Generate audio</strong> no n8n e salve a URL em <code className="bg-slate-800 px-0.5 rounded">entrevistas.audio_url</code>
+                      </p>
+                    </div>
+                  </div>
+                )}
               </InfoCard>
 
+              {/* PDF */}
               {entrevista?.pdf_url ? (
                 <a href={entrevista.pdf_url} target="_blank" rel="noopener noreferrer" className="block group">
                   <div className="bg-[#001733] border border-[#002b5c] group-hover:border-[#e11d48]/40
@@ -702,15 +743,17 @@ export default function DetalhesPage() {
                   </div>
                 </a>
               ) : (
-                <div className="bg-[#001733] border border-[#002b5c]/50 rounded-2xl p-5">
-                  <div className="flex items-center gap-3 text-slate-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="bg-[#001733] border border-[#002b5c]/50 rounded-2xl p-4">
+                  <div className="flex items-start gap-2.5">
+                    <svg className="w-4 h-4 text-slate-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
                     <div>
-                      <p className="text-sm font-medium">PDF não disponível</p>
-                      <p className="text-xs text-slate-700 mt-0.5">Verifique o nó PDFShift no n8n</p>
+                      <p className="text-xs font-medium text-slate-500">PDF não gerado</p>
+                      <p className="text-xs text-slate-700 mt-0.5 leading-relaxed">
+                        No n8n: salve o PDF no Supabase Storage e grave a URL em <code className="bg-slate-800/60 px-0.5 rounded">entrevistas.pdf_url</code>
+                      </p>
                     </div>
                   </div>
                 </div>

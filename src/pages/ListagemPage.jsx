@@ -195,12 +195,16 @@ export default function ListagemPage({ session }) {
     toast(`${liderancas.length} lideranças exportadas`, 'success')
   }, [liderancas, toast])
 
-  const handleUploadSuccess = () => {
+  const handleUploadSuccess = useCallback(() => {
     setShowUpload(false)
     setProcessingBanner(true)
     if (processingTimerRef.current) clearTimeout(processingTimerRef.current)
+    // Força refresh imediato — o polling do UploadAudio já confirmou que o
+    // registro existe no Supabase, então fetchLiderancas() vai encontrá-lo
+    fetchLiderancas()
+    fetchFollowUpCounts()
     processingTimerRef.current = setTimeout(() => setProcessingBanner(false), 3 * 60 * 1000)
-  }
+  }, [fetchLiderancas, fetchFollowUpCounts])
 
   // Filter + Sort with useMemo for performance (uses debouncedSearch)
   const sorted = useMemo(() => {
