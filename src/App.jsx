@@ -10,6 +10,7 @@ import LoadingSpinner from './components/LoadingSpinner'
 const AnalyticsPage  = lazy(() => import('./pages/AnalyticsPage'))
 const ComparadorPage = lazy(() => import('./pages/ComparadorPage'))
 const MapaPage       = lazy(() => import('./pages/MapaPage'))
+const CustosPage     = lazy(() => import('./pages/CustosPage'))
 
 function PageLoader() {
   return (
@@ -63,6 +64,10 @@ export default function App() {
         <Route
           path="/comparar"
           element={session ? <ComparadorPage session={session} /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/custos"
+          element={session ? <CustosPage session={session} /> : <Navigate to="/login" replace />}
         />
       </Routes>
       </Suspense>

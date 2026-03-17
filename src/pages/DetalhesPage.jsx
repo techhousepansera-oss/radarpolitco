@@ -17,6 +17,7 @@ function formatTranscricao(texto) {
   if (!texto) return []
 
   const gatilhos = [
+    // Perguntas padrão de entrevista política
     'qual o seu nome', 'qual o apelido', 'como começou', 'você conheceu',
     'você é da', 'qual a diferença', 'como que você entra', 'participa de',
     'você vai fazer', 'quantos alunos', 'como que é esse projeto',
@@ -25,11 +26,18 @@ function formatTranscricao(texto) {
     'qual é a dificuldade', 'características', 'as pessoas mais lembram',
     'associação partidária', 'focaria no candidato', 'me fala sobre',
     'como você avalia', 'o que você acha',
+    // Gatilhos adicionais para entrevistas reais
+    'qual o seu tel', 'qual o whats', 'tem instagram', 'qual o instagram',
+    'qual o facebook', 'você mora', 'onde você mora', 'qual o endereço',
+    'há quanto tempo', 'quando você conheceu', 'há quantos anos',
+    'como é que você', 'fala um pouco', 'pode falar sobre',
+    'qual a sua', 'como foi', 'o senhor', 'a senhora',
+    'você poderia', 'você conhece', 'você trabalha', 'você atua',
+    'qual seria', 'qual é o seu', 'qual é a sua',
+    'e aí', 'tá e', 'então me', 'então você',
   ]
 
   const lower = texto.toLowerCase()
-  const blocos = []
-  let ultimoIdx = 0
   const encontrados = []
 
   gatilhos.forEach((g) => {
@@ -42,38 +50,41 @@ function formatTranscricao(texto) {
 
   encontrados.sort((a, b) => a.idx - b.idx)
 
-  if (encontrados.length === 0) {
-    // Sem perguntas detectadas: divide em parágrafos por sentenças
-    const sentences = texto
-      .replace(/([.!?])\s+([A-ZÁÉÍÓÚÀÂÊÔÃÕÇ])/g, '$1\n$2')
-      .split('\n')
-      .map(s => s.trim())
-      .filter(s => s.length > 5)
+  // Remove gatilhos muito próximos (< 40 chars de distância) para evitar fragmentação
+  const deduped = encontrados.filter((item, i) => {
+    if (i === 0) return true
+    return item.idx - encontrados[i - 1].idx > 40
+  })
 
-    let current = []
-    sentences.forEach((s, i) => {
-      current.push(s)
-      if (current.length >= 4 || i === sentences.length - 1) {
-        blocos.push({ tipo: 'paragrafo', texto: current.join(' ') })
-        current = []
-      }
-    })
+  if (deduped.length < 3) {
+    // Fallback: divide por contagem de palavras (~120 por parágrafo)
+    const blocos = []
+    const words = texto.split(/\s+/).filter(Boolean)
+    const WORDS_PER_PARA = 120
+    for (let i = 0; i < words.length; i += WORDS_PER_PARA) {
+      const chunk = words.slice(i, i + WORDS_PER_PARA).join(' ')
+      if (chunk.trim()) blocos.push({ tipo: 'paragrafo', texto: chunk })
+    }
     return blocos
   }
 
-  // Com perguntas: formata como Q&A
-  encontrados.forEach((item, i) => {
+  // Com perguntas suficientes: formata como Q&A
+  const blocos = []
+  deduped.forEach((item, i) => {
     const inicio = item.idx
-    const fim = i + 1 < encontrados.length ? encontrados[i + 1].idx : texto.length
+    const fim = i + 1 < deduped.length ? deduped[i + 1].idx : texto.length
 
-    // Acha fim da pergunta (próximo ? ou . após o gatilho)
+    // Fim da pergunta: próximo ? ou ponto final, ou 120 chars
     let fimPergunta = texto.indexOf('?', inicio)
-    if (fimPergunta === -1 || fimPergunta > inicio + 150) fimPergunta = inicio + 80
+    const fimPonto = texto.indexOf('.', inicio)
+    if (fimPergunta === -1 || fimPergunta > inicio + 200) {
+      fimPergunta = (fimPonto > inicio && fimPonto < inicio + 200) ? fimPonto : inicio + 120
+    }
     const pergunta = texto.slice(inicio, fimPergunta + 1).trim()
     const resposta = texto.slice(fimPergunta + 1, fim).trim()
 
     if (pergunta) blocos.push({ tipo: 'pergunta', texto: pergunta })
-    if (resposta) blocos.push({ tipo: 'resposta', texto: resposta })
+    if (resposta && resposta.length > 15) blocos.push({ tipo: 'resposta', texto: resposta })
   })
 
   return blocos
