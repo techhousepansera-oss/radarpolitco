@@ -125,9 +125,8 @@ export default function UploadAudio({ onClose, onSuccess }) {
         // 36 × 5s = 3 minutos sem resposta
         clearInterval(pollRef.current)
         clearInterval(timerRef.current)
-        // Não é erro — pode ser que ainda esteja processando
-        onSuccess?.()
-        onClose?.()
+        setStatus('error')
+        setErrorMsg('Tempo limite atingido (3 min) — o n8n não retornou nenhuma liderança. Verifique os logs do workflow e tente novamente.')
       }
     }, 5000) // verifica a cada 5 segundos
   }, [onSuccess, onClose])
