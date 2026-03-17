@@ -30,6 +30,7 @@ export default function ListagemPage({ session }) {
   const [confirmDelete, setConfirmDelete] = useState(null) // { id, nome }
   const [deleting, setDeleting] = useState(false)
   const [followUpCounts, setFollowUpCounts] = useState({}) // { lider_id: count }
+  const [overdueCount, setOverdueCount] = useState(0)
   const channelRef = useRef(null)
   const processingTimerRef = useRef(null)
   const mobileSearchRef = useRef(null)
@@ -38,12 +39,18 @@ export default function ListagemPage({ session }) {
   const fetchFollowUpCounts = useCallback(async () => {
     const { data } = await supabase
       .from('follow_ups')
-      .select('lider_id')
+      .select('lider_id, data_agendada')
       .eq('status', 'pendente')
     if (!data) return
     const counts = {}
-    data.forEach(({ lider_id }) => { counts[lider_id] = (counts[lider_id] || 0) + 1 })
+    const now = new Date()
+    let overdue = 0
+    data.forEach(({ lider_id, data_agendada }) => {
+      counts[lider_id] = (counts[lider_id] || 0) + 1
+      if (new Date(data_agendada) < now) overdue++
+    })
     setFollowUpCounts(counts)
+    setOverdueCount(overdue)
   }, [])
 
   const fetchLiderancas = useCallback(async () => {
@@ -171,7 +178,10 @@ export default function ListagemPage({ session }) {
     }
     const headers = [
       'Nome Completo', 'Apelido Político', 'Território', 'Município',
-      'Status Fidelidade', 'Meta Caxias', 'Meta Estado', 'Cadastrado em',
+      'Status Fidelidade', 'Meta Caxias', 'Meta Estado',
+      'Telefone', 'Instagram', 'Facebook', 'Logradouro', 'CEP',
+      'Grau de Instrução', 'Perfil Ideológico', 'Participa de',
+      'Desde quando atua', 'Desde quando Pansera', 'Cadastrado em',
     ]
     const rows = liderancas.map((l) => [
       l.nome_completo || '',
@@ -181,6 +191,16 @@ export default function ListagemPage({ session }) {
       l.status_fidelidade || '',
       l.meta_votos_caxias || 0,
       l.meta_votos_estado || 0,
+      l.telefone || '',
+      l.instagram || '',
+      l.facebook || '',
+      l.logradouro || '',
+      l.cep || '',
+      l.grau_instrucao || '',
+      l.perfil_ideologico || '',
+      l.participa_de || '',
+      l.desde_quando_atua || '',
+      l.desde_quando_pansera || '',
       formatDate(l.criado_em || l.created_at),
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
 
@@ -217,7 +237,11 @@ export default function ListagemPage({ session }) {
         l.nome_completo?.toLowerCase().includes(q) ||
         l.apelido_politico?.toLowerCase().includes(q) ||
         l.territorio_principal?.toLowerCase().includes(q) ||
-        l.municipio?.toLowerCase().includes(q)
+        l.municipio?.toLowerCase().includes(q) ||
+        l.telefone?.includes(q) ||
+        l.instagram?.toLowerCase().includes(q) ||
+        l.facebook?.toLowerCase().includes(q) ||
+        l.participa_de?.toLowerCase().includes(q)
 
       const s = l.status_fidelidade?.toLowerCase() || ''
       const matchFilter =
@@ -580,6 +604,20 @@ export default function ListagemPage({ session }) {
           </div>
         )}
 
+        {/* ── Banner: Follow-ups Atrasados ── */}
+        {overdueCount > 0 && (
+          <div className="flex items-center gap-3 mb-4 px-4 py-3 bg-rose-500/10 border border-rose-500/30
+            rounded-xl">
+            <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-rose-300 flex-1">
+              <strong>{overdueCount}</strong> follow-up{overdueCount !== 1 ? 's' : ''} atrasado{overdueCount !== 1 ? 's' : ''} — acesse a aba Agenda de cada liderança para resolver.
+            </p>
+          </div>
+        )}
+
         {/* ── Stats Bar ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
           <StatCard icon="👥" label="Lideranças" value={stats.total} color="blue" />
@@ -871,8 +909,38 @@ function LiderancaCard({ lider, onClick, onDelete, followUpCount = 0, index = 0 
         )}
       </div>
 
+      {/* Avaliação interna — média */}
+      {(() => {
+        const scores = [
+          lider.avaliacao_capacidade,
+          lider.avaliacao_entrega,
+          lider.avaliacao_comprometimento,
+          lider.avaliacao_postura,
+          lider.avaliacao_potencial,
+        ].filter(Boolean)
+        if (scores.length === 0) return null
+        const media = scores.reduce((a, b) => a + b, 0) / scores.length
+        const stars = Math.round(media)
+        return (
+          <div className="flex items-center gap-1.5 mt-3">
+            <div className="flex gap-0.5">
+              {[1,2,3,4,5].map((v) => (
+                <svg key={v} className={`w-3 h-3 ${v <= stars ? 'text-amber-400' : 'text-slate-700'}`}
+                  fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                </svg>
+              ))}
+            </div>
+            <span className="text-xs text-slate-500">{media.toFixed(1)}</span>
+            {lider.avaliacao_perfil && (
+              <span className="text-xs text-slate-600 capitalize ml-0.5">· {lider.avaliacao_perfil}</span>
+            )}
+          </div>
+        )
+      })()}
+
       {/* Footer */}
-      <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#002b5c]/50">
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#002b5c]/50">
         <div className="flex items-center gap-2">
           <span
             className="text-xs text-slate-600"
@@ -887,11 +955,43 @@ function LiderancaCard({ lider, onClick, onDelete, followUpCount = 0, index = 0 
             </span>
           )}
         </div>
-        {lider.municipio && (
-          <span className="text-xs text-slate-500 bg-[#002b5c]/40 px-2 py-0.5 rounded-full">
-            {lider.municipio}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {lider.telefone && (
+            <a
+              href={`https://wa.me/55${lider.telefone.replace(/\D/g, '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="WhatsApp"
+              className="w-6 h-6 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/30 border border-emerald-500/20
+                flex items-center justify-center text-emerald-400 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+            </a>
+          )}
+          {lider.instagram && (
+            <a
+              href={lider.instagram.startsWith('http') ? lider.instagram : `https://instagram.com/${lider.instagram.replace('@','')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="Instagram"
+              className="w-6 h-6 rounded-lg bg-purple-500/10 hover:bg-purple-500/30 border border-purple-500/20
+                flex items-center justify-center text-purple-400 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/>
+              </svg>
+            </a>
+          )}
+          {lider.municipio && (
+            <span className="text-xs text-slate-500 bg-[#002b5c]/40 px-2 py-0.5 rounded-full">
+              {lider.municipio}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
